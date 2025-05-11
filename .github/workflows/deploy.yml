@@ -1,53 +1,39 @@
-name: Deploy to Production
+name: Test SSH Connection
 
 on:
-  push:
-    branches: [ main ]  # Change this to your main branch name if different
-  workflow_dispatch:    # Allows manual workflow runs
+  workflow_dispatch:  # Allows manual triggering
 
 jobs:
-  deploy:
+  test-ssh:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
       - name: Set up SSH
-        uses: webfactory/ssh-agent@v0.7.0
+        uses: shimataro/ssh-key-action@v2
         with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          known_hosts: 'just-a-placeholder'
 
-      - name: Setup known hosts
+      - name: Add remote host to known hosts
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
-      - name: Deploy to server
-        env:
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          DEPLOY_PATH: /root/services/portfolio
+      - name: Create test file
         run: |
-          # Create deployment script
-          cat << 'EOF' > deploy.sh
-          #!/bin/bash
-          set -e
+          echo "This is a test file created by GitHub Actions on $(date)" > ssh_test.txt
+
+      - name: Test SSH connection and file transfer
+        run: |
+          # First test simple SSH connection
+          echo "Testing SSH connection..."
+          ssh -o StrictHostKeyChecking=no -o BatchMode=yes ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo SSH connection successful! && hostname && whoami"
           
-          echo "Navigating to project directory..."
-          cd $DEPLOY_PATH
+          # Then test file transfer
+          echo "Testing file transfer..."
+          scp -o StrictHostKeyChecking=no -o BatchMode=yes ssh_test.txt ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/root/services/ssh_test.txt
           
-          echo "Pulling latest code from repository..."
-          git pull
-          
-          echo "Restarting docker container..."
-          docker compose down
-          docker compose up -d
-          
-          echo "Deployment completed successfully!"
-          EOF
-          
-          # Transfer and execute deployment script
-          chmod +x deploy.sh
-          scp deploy.sh $SSH_USER@$SSH_HOST:$DEPLOY_PATH/deploy.sh
-          ssh $SSH_USER@$SSH_HOST "chmod +x $DEPLOY_PATH/deploy.sh && $DEPLOY_PATH/deploy.sh"
+          # Verify file was created
+          echo "Verifying file was created..."
+          ssh -o StrictHostKeyChecking=no -o BatchMode=yes ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "ls -la /root/services/ssh_test.txt && cat /root/services/ssh_test.txt"
