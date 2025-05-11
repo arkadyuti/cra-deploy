@@ -1,0 +1,53 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]  # Change this to your main branch name if different
+  workflow_dispatch:    # Allows manual workflow runs
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Setup known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to server
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          DEPLOY_PATH: /root/services/portfolio
+        run: |
+          # Create deployment script
+          cat << 'EOF' > deploy.sh
+          #!/bin/bash
+          set -e
+          
+          echo "Navigating to project directory..."
+          cd $DEPLOY_PATH
+          
+          echo "Pulling latest code from repository..."
+          git pull
+          
+          echo "Restarting docker container..."
+          docker compose down
+          docker compose up -d
+          
+          echo "Deployment completed successfully!"
+          EOF
+          
+          # Transfer and execute deployment script
+          chmod +x deploy.sh
+          scp deploy.sh $SSH_USER@$SSH_HOST:$DEPLOY_PATH/deploy.sh
+          ssh $SSH_USER@$SSH_HOST "chmod +x $DEPLOY_PATH/deploy.sh && $DEPLOY_PATH/deploy.sh"
